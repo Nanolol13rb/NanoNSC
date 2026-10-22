@@ -242,6 +242,43 @@ class VersionAndHardwareTests(unittest.TestCase):
         self.assertFalse(updater.is_newer("1.2.0", "1.2"))
         self.assertFalse(updater.is_newer("", "1.0"))
 
+    def test_latest_app_release_reads_github_tag_and_url(self):
+        response = mock.MagicMock()
+        response.__enter__.return_value.read.return_value = json.dumps({
+            "tag_name": "v2.5.0",
+            "html_url": updater.GITHUB_RELEASE_URL_PREFIX + "v2.5.0",
+        }).encode("utf-8")
+        with mock.patch.object(updater.urllib.request, "urlopen",
+                               return_value=response) as urlopen:
+            release = updater.latest_app_release()
+        self.assertEqual(release, (
+            "2.5.0", updater.GITHUB_RELEASE_URL_PREFIX + "v2.5.0"
+        ))
+        urlopen.assert_called_once()
+        self.assertEqual(urlopen.call_args.kwargs["timeout"], 8)
+
+    def test_latest_app_release_rejects_untrusted_release_url(self):
+        response = mock.MagicMock()
+        response.__enter__.return_value.read.return_value = json.dumps({
+            "tag_name": "v2.5.0",
+            "html_url": "https://example.com/fake-release",
+        }).encode("utf-8")
+        with mock.patch.object(updater.urllib.request, "urlopen",
+                               return_value=response):
+            with self.assertRaises(ValueError):
+                updater.latest_app_release()
+
+    def test_latest_app_release_rejects_non_semver_tag(self):
+        response = mock.MagicMock()
+        response.__enter__.return_value.read.return_value = json.dumps({
+            "tag_name": "latest",
+            "html_url": updater.GITHUB_RELEASE_URL_PREFIX + "latest",
+        }).encode("utf-8")
+        with mock.patch.object(updater.urllib.request, "urlopen",
+                               return_value=response):
+            with self.assertRaises(ValueError):
+                updater.latest_app_release()
+
     def test_hardware_match_rejects_conflicting_subsystem(self):
         device = r"PCI\VEN_8086&DEV_2723&SUBSYS_00748086&REV_01"
         matching = r"PCI\VEN_8086&DEV_2723&SUBSYS_00748086"

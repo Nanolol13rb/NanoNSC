@@ -32,6 +32,7 @@ import socket
 import urllib.error
 import urllib.parse
 import urllib.request
+import webbrowser
 import zipfile
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field, replace
@@ -56,7 +57,11 @@ from tkinter import filedialog, messagebox, ttk
 from tkinter import font as tkfont
 
 APP_NAME = "Nano System Control"
-APP_VERSION = "2.4.1"
+APP_VERSION = "2.4.2"
+GITHUB_LATEST_RELEASE_URL = (
+    "https://api.github.com/repos/Nanolol13rb/NanoNSC/releases/latest"
+)
+GITHUB_RELEASE_URL_PREFIX = "https://github.com/Nanolol13rb/NanoNSC/releases/tag/"
 DEFAULT_THEME = "violet"
 APP_DIR = Path(os.environ.get("APPDATA") or str(Path.home())) / "SystemUpdaterCleaner"
 CONFIG_FILE = APP_DIR / "config.json"
@@ -529,6 +534,27 @@ def http_get(url: str, data: Optional[bytes] = None, timeout: int = 60,
             import gzip
             raw = gzip.decompress(raw)
         return raw
+
+
+def latest_app_release() -> Optional[Tuple[str, str]]:
+    request = urllib.request.Request(
+        GITHUB_LATEST_RELEASE_URL,
+        headers={
+            "Accept": "application/vnd.github+json",
+            "User-Agent": "Nano-System-Control",
+        },
+    )
+    with urllib.request.urlopen(request, timeout=8) as response:
+        release = json.loads(response.read().decode("utf-8"))
+    if not isinstance(release, dict):
+        raise ValueError("GitHub hat ungueltige Release-Daten zurueckgegeben.")
+    tag = release.get("tag_name")
+    url = release.get("html_url")
+    match = re.fullmatch(r"v?(\d+\.\d+\.\d+)", tag) if isinstance(tag, str) else None
+    if not match or not isinstance(url, str) or not url.startswith(
+            GITHUB_RELEASE_URL_PREFIX):
+        raise ValueError("GitHub-Release enthaelt keine gueltige Version oder Download-Adresse.")
+    return match.group(1), url
 
 
 def http_download(url: str, dest: Path, timeout: int = 300,
@@ -3652,6 +3678,36 @@ class App(tk.Tk):
         LOG.info("Adminrechte: %s" % ("vorhanden" if is_admin() else "nicht vorhanden (Installation fragt nach)"))
         self._show_startup_screen()
         self.after(400, self.load_drivers)
+        self.after(1500, self._check_app_update)
+
+    def _check_app_update(self) -> None:
+        def work() -> None:
+            try:
+                release = latest_app_release()
+            except (OSError, urllib.error.URLError, ValueError,
+                    json.JSONDecodeError) as exc:
+                LOG.warn("App-Updates konnten nicht geprueft werden: %s" % exc)
+                return
+            if release and is_newer(release[0], APP_VERSION):
+                self._post_ui(self._offer_app_update, *release)
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _offer_app_update(self, version: str, release_url: str) -> None:
+        if not messagebox.askyesno(
+                APP_NAME,
+                "Nano System Control %s ist verfuegbar "
+                "(installiert: %s).\n\nMoechtest du die Download-Seite oeffnen?"
+                % (version, APP_VERSION),
+                parent=self):
+            return
+        if not webbrowser.open(release_url):
+            messagebox.showwarning(
+                APP_NAME,
+                "Die Download-Seite konnte nicht automatisch geoeffnet werden:\n%s"
+                % release_url,
+                parent=self,
+            )
 
     def _show_startup_screen(self) -> None:
         screen = tk.Frame(self, bg=T.bg)
@@ -4518,7 +4574,6 @@ class App(tk.Tk):
         self.set_busy(False)
         if vendor:
             LOG.ok("%d Herstellertreiber von %d Geraeten geladen." % (len(vendor), total))
-            self.after(0, self.scan_updates)
         else:
             LOG.warn("Keine Herstellertreiber gefunden (Geraete insgesamt: %d)." % total)
             self.set_status("Keine Herstellertreiber", T.warn)

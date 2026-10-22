@@ -4,9 +4,9 @@ Windows-Desktop-App zur Anzeige und Verwaltung von Treibern und Systemwartung.
 Das violette Farbschema ist die Voreinstellung; zehn Themes stehen in den
 Einstellungen zur Auswahl. Bedienelemente und Navigation reagieren mit
 passendem Hover- und Fokus-Feedback.
-Beim Start liest die App installierte Herstellertreiber ein und sucht danach
-automatisch nach passenden Updates. Treiber werden dabei nicht automatisch
-installiert; eine Installation erfordert weiterhin deine Bestätigung.
+Beim Start prüft die App automatisch auf eine neuere Version von Nano System
+Control und bietet bei Bedarf die GitHub-Downloadseite an. Das Programm wird
+nicht ohne deine Zustimmung heruntergeladen oder installiert.
 
 ## Download
 
