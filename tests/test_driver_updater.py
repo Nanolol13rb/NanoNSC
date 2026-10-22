@@ -180,9 +180,9 @@ class MaintenanceTests(unittest.TestCase):
             ok, failed = maintenance.cleanup_files(
                 [str(link)], root, True, lambda paths: (len(paths), [])
             )
-        self.assertEqual(ok, 0)
-        self.assertEqual(failed, [str(link)])
-        self.assertTrue(outside.exists())
+            self.assertEqual(ok, 0)
+            self.assertEqual(failed, [str(link)])
+            self.assertTrue(outside.exists())
 
 
 class VersionAndHardwareTests(unittest.TestCase):
