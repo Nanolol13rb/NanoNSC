@@ -56,7 +56,7 @@ from tkinter import filedialog, messagebox, ttk
 from tkinter import font as tkfont
 
 APP_NAME = "Nano System Control"
-APP_VERSION = "2.0"
+APP_VERSION = "2.4.0"
 DEFAULT_THEME = "violet"
 APP_DIR = Path(os.environ.get("APPDATA") or str(Path.home())) / "SystemUpdaterCleaner"
 CONFIG_FILE = APP_DIR / "config.json"
