@@ -1,0 +1,59 @@
+name: Windows app
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    tags:
+      - "v*"
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install build dependency
+        run: python -m pip install -r requirements-build.txt
+
+      - name: Run tests
+        run: python -m unittest tests.test_driver_updater
+
+      - name: Build Windows app
+        run: python -m PyInstaller --noconfirm --clean --onefile --windowed --name NanoSystemControl driver_updater.py
+
+      - name: Upload app artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: NanoSystemControl-windows
+          path: dist/NanoSystemControl.exe
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download app artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: NanoSystemControl-windows
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$env:GITHUB_REF_NAME" NanoSystemControl.exe --repo "$env:GITHUB_REPOSITORY" --title "Nano System Control $env:GITHUB_REF_NAME" --generate-notes
