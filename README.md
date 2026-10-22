@@ -6,7 +6,9 @@ Einstellungen zur Auswahl. Bedienelemente und Navigation reagieren mit
 passendem Hover- und Fokus-Feedback.
 Beim Start prüft die App automatisch auf eine neuere Version von Nano System
 Control und bietet bei Bedarf die GitHub-Downloadseite an. Das Programm wird
-nicht ohne deine Zustimmung heruntergeladen oder installiert.
+nicht ohne deine Zustimmung heruntergeladen oder installiert. Das Fenster
+öffnet sich maximiert; das Systemprotokoll lässt sich bei Bedarf über die
+Kopfzeile einblenden.
 
 ## Download
 

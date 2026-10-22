@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-System Updater & Cleaner  -  Version 2.0
-==========================================
+Nano System Control
+===================
 
 Desktop-Systemwerkzeug mit den Bereichen Treiber, Dateien, Autostart,
 Speicheranalyse, Systemmonitor, Netzwerkdiagnose, Übersicht und
@@ -57,7 +57,7 @@ from tkinter import filedialog, messagebox, ttk
 from tkinter import font as tkfont
 
 APP_NAME = "Nano System Control"
-APP_VERSION = "2.4.2"
+APP_VERSION = "2.5.0"
 GITHUB_LATEST_RELEASE_URL = (
     "https://api.github.com/repos/Nanolol13rb/NanoNSC/releases/latest"
 )
@@ -2112,22 +2112,30 @@ class ToolsView(ttk.Frame):
         self.overview_status = ttk.Label(bar, text="Noch nicht aktualisiert",
                                          style="Muted.TLabel")
         self.overview_status.pack(side="left", padx=12)
+        ttk.Button(bar, text="Treiber", style="Ghost.TButton",
+                   command=lambda: self.app.show_view("drivers")).pack(
+                       side="right", padx=(8, 0))
+        ttk.Button(bar, text="Dateien", style="Ghost.TButton",
+                   command=lambda: self.app.show_view("files")).pack(side="right")
         cards = ttk.Frame(frame, style="Bg.TFrame")
         cards.pack(fill="both", expand=True, padx=24, pady=(0, 12))
-        cards.grid_columnconfigure(0, weight=1, uniform="overview")
-        cards.grid_columnconfigure(1, weight=1, uniform="overview")
+        for column in range(3):
+            cards.grid_columnconfigure(column, weight=1, uniform="overview")
+        for row in range(2):
+            cards.grid_rowconfigure(row, weight=1, uniform="overview")
         self.overview_labels: Dict[str, ttk.Label] = {}
-        cards.grid_rowconfigure(2, weight=1)
         for key, title, icon, row, column in (
             ("os", "Windows", "🪟", 0, 0),
             ("cpu", "Prozessor", "🧠", 0, 1),
-            ("memory", "Arbeitsspeicher", "💾", 1, 0),
-            ("drives", "Laufwerke", "🗄️", 1, 1),
-            ("scans", "Letzte Scans", "🕘", 2, 0),
+            ("memory", "Arbeitsspeicher", "💾", 0, 2),
+            ("drives", "Laufwerke", "🗄️", 1, 0),
+            ("scans", "Letzte Scans", "🕘", 1, 1),
         ):
             group = ttk.Frame(cards, style="Card.TFrame", padding=(16, 13))
-            group.grid(row=row, column=column, columnspan=2 if key == "scans" else 1,
-                       sticky="nsew", padx=(0, 8) if column == 0 else (8, 0),
+            columnspan = 2 if key == "scans" else 1
+            padx = (0, 8) if column == 0 else (8, 0) if column == 1 else (8, 0)
+            group.grid(row=row, column=column, columnspan=columnspan,
+                       sticky="nsew", padx=padx,
                        pady=(0, 12))
             ttk.Label(group, text="%s  %s" % (icon, title),
                       style="H2.TLabel").pack(anchor="w")
@@ -3372,8 +3380,8 @@ class FilesView(ttk.Frame):
         row2.pack(fill="x", padx=17, pady=(4, 5))
         self.chk_dupes_var = tk.BooleanVar(value=True)
         self.chk_dupes = tk.Checkbutton(row2, text="Duplikate finden", bg=T.card, fg=T.text,
-                                        selectcolor=T.card_hi, activebackground=T.card,
-                                        activeforeground=T.text, bd=0, highlightthickness=0,
+                                        selectcolor=T.card_hi, activebackground=T.card_hover,
+                                        activeforeground=T.accent, bd=0, highlightthickness=0,
                                         font=(self.app.ui, 10), variable=self.chk_dupes_var,
                                         onvalue=True, offvalue=False, anchor="w")
         self.chk_dupes.pack(side="left")
@@ -3394,7 +3402,7 @@ class FilesView(ttk.Frame):
         self.chk_skip_var = tk.BooleanVar(value=True)
         self.chk_skip = tk.Checkbutton(row4, text="Systemordner überspringen", bg=T.card,
                                        fg=T.text, selectcolor=T.card_hi,
-                                       activebackground=T.card, activeforeground=T.text, bd=0,
+                                       activebackground=T.card_hover, activeforeground=T.accent, bd=0,
                                        highlightthickness=0, font=(self.app.ui, 10),
                                        variable=self.chk_skip_var, onvalue=True, offvalue=False)
         self.chk_skip.pack(side="left")
@@ -3633,8 +3641,8 @@ class App(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
         self.title("Nano System Control  %s" % APP_VERSION)
-        self.geometry("1280x820")
-        self.minsize(1040, 680)
+        self.geometry("1360x860")
+        self.minsize(1024, 680)
         self.configure(bg=T.bg)
 
         self.ui = pick_font(self, "Segoe UI Variable Text", "Segoe UI", "Tahoma")
@@ -3651,6 +3659,8 @@ class App(tk.Tk):
         self.usage_tracker: Optional[usage_tracker.UsageTracker] = None
         self.usage_error = ""
         self._base_font_specs: Dict[tk.Misc, Tuple[str, int, str, str]] = {}
+        self._nav_hover_jobs: Dict[tk.Frame, str] = {}
+        self._nav_animation_jobs: Dict[tk.Frame, str] = {}
 
         self._init_style()
 
@@ -3674,11 +3684,18 @@ class App(tk.Tk):
         LOG.bind(lambda lvl, m: self._post_ui(self.log_panel.write, lvl, m))
         self._init_usage_tracker()
         self._load_config()
+        self.after_idle(self._maximize_window)
         LOG.info("%s %s bereit." % (APP_NAME, APP_VERSION))
         LOG.info("Adminrechte: %s" % ("vorhanden" if is_admin() else "nicht vorhanden (Installation fragt nach)"))
         self._show_startup_screen()
         self.after(400, self.load_drivers)
         self.after(1500, self._check_app_update)
+
+    def _maximize_window(self) -> None:
+        try:
+            self.state("zoomed")
+        except tk.TclError:
+            LOG.warn("Fenster konnte nicht maximiert werden; verwende die gespeicherte Größe.")
 
     def _check_app_update(self) -> None:
         def work() -> None:
@@ -3860,8 +3877,7 @@ class App(tk.Tk):
         s.configure(".", background=T.bg, foreground=T.text,
                     font=(self.ui, max(8, round(10 * self.font_scale))))
         s.configure("Bg.TFrame", background=T.bg)
-        s.configure("Card.TFrame", background=T.card, relief="solid", borderwidth=1,
-                    bordercolor=T.line)
+        s.configure("Card.TFrame", background=T.card, relief="flat", borderwidth=0)
         s.configure("H1.TLabel", background=T.bg, foreground=T.text,
                     font=(self.title_font, max(16, round(20 * self.font_scale)), "bold"))
         s.configure("Muted.TLabel", background=T.bg, foreground=T.dim,
@@ -3869,7 +3885,7 @@ class App(tk.Tk):
         s.configure("Muted2.TLabel", background=T.card, foreground=T.dim,
                     font=(self.ui, max(9, round(10 * self.font_scale))))
         s.configure("H2.TLabel", background=T.card, foreground=T.text,
-                    font=(self.title_font, max(9, round(11 * self.font_scale)), "bold"))
+                    font=(self.title_font, max(10, round(12 * self.font_scale)), "bold"))
         s.configure("Field.TEntry", fieldbackground=T.card_hi, foreground=T.text,
                     insertcolor=T.accent, borderwidth=1, relief="flat",
                     bordercolor=T.line, padding=(10, 8))
@@ -3884,44 +3900,45 @@ class App(tk.Tk):
               arrowcolor=[("pressed", T.accent_hover), ("active", T.accent_hover)],
               bordercolor=[("focus", T.accent), ("active", T.accent_hover)])
         s.configure("Accent.TButton", background=T.accent, foreground=T.bg, borderwidth=0,
-                    focuscolor=T.accent_hover, padding=(14, 9), relief="flat",
+                    focuscolor=T.accent_hover, padding=(17, 11), relief="flat",
                     font=(self.ui, max(9, round(10 * self.font_scale)), "bold"))
         s.map("Accent.TButton",
               background=[("disabled", T.card_hi), ("pressed", T.accent_soft),
                           ("active", T.accent_hover)],
               foreground=[("disabled", T.faint), ("pressed", T.text)],
               relief=[("pressed", "sunken"), ("active", "flat")])
-        s.configure("Ghost.TButton", background=T.card_hi, foreground=T.text, borderwidth=1,
-                    bordercolor=T.line, relief="solid", padding=(13, 8),
+        s.configure("Ghost.TButton", background=T.card_hi, foreground=T.text, borderwidth=0,
+                    bordercolor=T.card_hi, relief="flat", padding=(15, 10),
                     font=(self.ui, max(9, round(10 * self.font_scale)), "bold"))
         s.map("Ghost.TButton", background=[("pressed", T.accent_soft),
                                            ("active", T.card_hover)],
               foreground=[("disabled", T.faint)],
               bordercolor=[("pressed", T.accent), ("active", T.accent_hover),
-                           ("!disabled", T.line)])
+                           ("focus", T.accent), ("!disabled", T.card_hi)])
         s.configure("Danger.TButton", background=T.danger, foreground=T.danger_text,
-                    borderwidth=1, bordercolor=T.danger_border, relief="solid",
-                    padding=(13, 9),
+                    borderwidth=0, bordercolor=T.danger, relief="flat",
+                    padding=(15, 10),
                     font=(self.ui, max(9, round(10 * self.font_scale)), "bold"))
         s.map("Danger.TButton", background=[("disabled", T.card_hi),
                                             ("pressed", T.danger_border), ("active", T.err)],
               foreground=[("disabled", T.faint)],
               bordercolor=[("pressed", T.err), ("active", T.err),
-                           ("!disabled", T.danger_border)])
+                           ("focus", T.err), ("!disabled", T.danger)])
         s.configure("Accent.Horizontal.TProgressbar", troughcolor=T.card_hi, background=T.accent,
                     borderwidth=0, thickness=8)
         s.configure("Treeview", background=T.card, fieldbackground=T.card, foreground=T.text,
-                    borderwidth=0, rowheight=max(30, round(34 * self.font_scale)),
-                    font=(self.ui, max(9, round(10 * self.font_scale))), padding=(5, 2))
-        s.map("Treeview", background=[("selected", T.sel)], foreground=[("selected", T.text)])
+                    borderwidth=0, rowheight=max(34, round(40 * self.font_scale)),
+                    font=(self.ui, max(9, round(10 * self.font_scale))), padding=(8, 3))
+        s.map("Treeview", background=[("selected", T.sel), ("active", T.card_hover)],
+              foreground=[("selected", T.text), ("active", T.text)])
         s.configure("Treeview.Heading", background=T.card_hi, foreground=T.dim,
-                    borderwidth=0, relief="flat", padding=(10, 9),
+                    borderwidth=0, relief="flat", padding=(12, 12),
                     font=(self.ui, max(8, round(9 * self.font_scale)), "bold"))
         s.map("Treeview.Heading",
               background=[("pressed", T.accent_soft), ("active", T.card_hover)],
               foreground=[("active", T.accent)])
         s.configure("TScrollbar", background=T.card_hi, troughcolor=T.card, borderwidth=0,
-                    arrowcolor=T.dim, arrowsize=12)
+                    arrowcolor=T.dim, arrowsize=12, relief="flat")
         s.configure("TProgressbar", background=T.accent, troughcolor=T.card_hi, borderwidth=0)
 
     def apply_theme(self, name: str) -> None:
@@ -4137,60 +4154,66 @@ class App(tk.Tk):
 
     # -- Layout -------------------------------------------------------------
     def _build_ui(self) -> None:
-        self.sidebar = tk.Frame(self, bg=T.card, width=236,
+        self.sidebar = tk.Frame(self, bg=T.card, width=264,
                                 highlightthickness=1, highlightbackground=T.line)
         self.sidebar.pack(side="left", fill="y")
         self.sidebar.pack_propagate(False)
 
         brand = tk.Frame(self.sidebar, bg=T.card)
-        brand.pack(fill="x", padx=22, pady=(24, 19))
-        tk.Label(brand, text="🛠  SYSTEM", bg=T.card, fg=T.accent,
-                 font=(self.title_font, 10, "bold")).pack(anchor="w")
-        tk.Label(brand, text="CONTROL", bg=T.card, fg=T.text,
-                 font=(self.title_font, 19, "bold")).pack(anchor="w", pady=(1, 0))
-        tk.Label(brand, text="DEVICE MANAGEMENT", bg=T.card, fg=T.faint,
-                 font=(self.ui, 8, "bold")).pack(anchor="w", pady=(4, 0))
+        brand.pack(fill="x", padx=18, pady=(16, 20))
+        mark = tk.Frame(brand, bg=T.accent, width=44, height=44)
+        mark.pack(side="left", padx=(0, 12))
+        mark.pack_propagate(False)
+        tk.Label(mark, text="N", bg=T.accent, fg=T.bg,
+                 font=(self.title_font, 25, "bold")).place(relx=0.5, rely=0.48, anchor="center")
+        wordmark = tk.Frame(brand, bg=T.card)
+        wordmark.pack(side="left", fill="y", pady=2)
+        tk.Label(wordmark, text="NANO", bg=T.card, fg=T.text,
+                 font=(self.title_font, 16, "bold")).pack(anchor="w")
+        tk.Label(wordmark, text="SYSTEM CONTROL", bg=T.card, fg=T.faint,
+                 font=(self.ui, 8, "bold")).pack(anchor="w", pady=(1, 0))
 
         self.nav_items: List[Tuple[tk.Frame, tk.Label, str, Callable[[], None]]] = []
         self.nav_icons: Dict[tk.Frame, tk.Label] = {}
         navigation = [
-            ("START", [("overview", "Übersicht", "🏠")]),
-            ("VERWALTEN", [("drivers", "Treiber", "🚘"),
+            ("WORKSPACE", [("overview", "Übersicht", "⌂")]),
+            ("VERWALTUNG", [("drivers", "Treiber", "◇"),
                            ("files", "Dateien", "📁")]),
-            ("SYSTEM", [("startup", "Autostart", "🚀"),
-                        ("storage", "Speicher", "💾"),
-                        ("monitor", "Monitor", "📊"),
-                        ("apps", "App-Nutzung", "⏱️"),
-                        ("network", "Netzwerk", "🌐"),
-                        ("recovery", "Wiederherstellung", "🛡️"),
-                        ("history", "Verlauf", "🕘")]),
+            ("SYSTEM", [("startup", "Autostart", "↗"),
+                        ("storage", "Speicher", "▤"),
+                        ("monitor", "Monitor", "◷"),
+                        ("apps", "App-Nutzung", "◴"),
+                        ("network", "Netzwerk", "⌁"),
+                        ("recovery", "Wiederherstellung", "⬡"),
+                        ("history", "Verlauf", "◷")]),
         ]
         for section, items in navigation:
             tk.Label(self.sidebar, text=section, bg=T.card, fg=T.faint,
                      anchor="w", font=(self.ui, 8, "bold")).pack(
-                         fill="x", padx=22, pady=(8, 5))
+                         fill="x", padx=22, pady=(7, 4))
             for key, label, glyph in items:
                 cb = lambda view=key: self.show_view(view)
-                row = tk.Frame(self.sidebar, bg=T.card, height=40)
-                row.pack(fill="x", padx=10, pady=2)
+                row = tk.Frame(self.sidebar, bg=T.card, height=42,
+                               highlightthickness=1, highlightbackground=T.card)
+                row.pack(fill="x", padx=12, pady=1)
                 row.pack_propagate(False)
-                bar = tk.Frame(row, bg=T.accent, width=3)
-                bar.place(x=0, y=7, height=26)
+                bar = tk.Frame(row, bg=T.accent, width=3, height=24)
+                bar.place(x=0, y=8)
                 icon = tk.Label(row, text=glyph, bg=T.card, fg=T.dim, width=3,
-                                anchor="center", font=(self.emoji, 12))
-                icon.pack(side="left", padx=(5, 3), pady=5)
+                                anchor="center", font=(self.emoji, 14))
+                icon.pack(side="left", padx=(9, 7), pady=6)
                 lbl = tk.Label(row, text=label, bg=T.card, fg=T.dim,
                                anchor="w", font=(self.ui, 10, "bold"), takefocus=True,
                                highlightthickness=1, highlightbackground=T.card,
                                highlightcolor=T.accent)
-                lbl.pack(side="left", fill="both", expand=True, padx=(2, 4))
+                lbl.pack(side="left", fill="both", expand=True, padx=(0, 8))
                 self.nav_icons[row] = icon
                 for widget in (row, icon, lbl):
                     widget.configure(cursor="hand2")
                     widget.bind("<Enter>", lambda _e, r=row, l=lbl:
-                                self._nav_hover(r, l, True))
+                                self._schedule_nav_hover(r, l))
                     widget.bind("<Leave>", lambda _e, r=row, l=lbl:
-                                self._nav_hover(r, l, False))
+                                self._schedule_nav_hover(r, l))
                     widget.bind("<Button-1>", lambda _e, c=cb: c())
                 lbl.bind("<Return>", lambda _e, c=cb: c())
                 lbl.bind("<space>", lambda _e, c=cb: c())
@@ -4201,38 +4224,52 @@ class App(tk.Tk):
                 self.nav_items.append((row, lbl, key, cb))
 
         foot = tk.Frame(self.sidebar, bg=T.card)
-        foot.pack(side="bottom", fill="x", padx=18, pady=16)
+        foot.pack(side="bottom", fill="x", padx=16, pady=(8, 14))
+        tk.Frame(foot, bg=T.line, height=1).pack(fill="x", pady=(0, 12))
         self.dot = tk.Label(foot, text="●", bg=T.card, fg=T.ok, font=(self.ui, 9))
         self.dot.pack(side="left")
         self.foot_lbl = tk.Label(foot, text="Bereit", bg=T.card, fg=T.faint, font=(self.ui, 9))
         self.foot_lbl.pack(side="left", padx=(6, 0))
         tk.Label(self.sidebar, text="v%s" % APP_VERSION, bg=T.card, fg=T.faint,
-                 font=(self.ui, 8)).pack(side="bottom", pady=(0, 8))
+                 font=(self.ui, 8)).pack(side="bottom", pady=(0, 2))
 
         right = tk.Frame(self, bg=T.bg)
         right.pack(side="left", fill="both", expand=True)
 
-        self.header = tk.Frame(right, bg=T.bg, height=78)
-        self.header.pack(fill="x", padx=26, pady=(15, 2))
+        self.header = tk.Frame(right, bg=T.card, height=100,
+                               highlightthickness=1, highlightbackground=T.line)
+        self.header.pack(fill="x", padx=24, pady=(20, 12))
         self.header.pack_propagate(False)
-        heading = tk.Frame(self.header, bg=T.bg)
-        heading.pack(side="left", fill="y", pady=(2, 6))
-        self.h_title = tk.Label(heading, text="Übersicht", bg=T.bg, fg=T.text,
-                                anchor="w", font=(self.title_font, 20, "bold"))
+        heading = tk.Frame(self.header, bg=T.card)
+        heading.pack(side="left", fill="y", padx=24, pady=15)
+        self.h_eyebrow = tk.Label(heading, text="NANO  /  WORKSPACE", bg=T.card,
+                                  fg=T.accent, anchor="w",
+                                  font=(self.ui, 8, "bold"))
+        self.h_eyebrow.pack(anchor="w", pady=(0, 3))
+        self.h_title = tk.Label(heading, text="Übersicht", bg=T.card, fg=T.text,
+                                anchor="w", font=(self.title_font, 21, "bold"))
         self.h_title.pack(anchor="w")
-        self.h_sub = tk.Label(heading, text="Systemstatus und Schnellzugriff",
-                              bg=T.bg, fg=T.faint, anchor="w", font=(self.ui, 9))
-        self.h_sub.pack(anchor="w", pady=(2, 0))
+        self.h_sub = tk.Label(heading, text="Systemstatus auf einen Blick",
+                              bg=T.card, fg=T.faint, anchor="w",
+                              font=(self.ui, 9), wraplength=360, justify="left")
+        self.h_sub.pack(anchor="w", pady=(1, 0))
 
-        self.pill = tk.Label(self.header, text="●  Bereit", bg=T.accent_soft, fg=T.accent,
-                             font=(self.ui, 9, "bold"), padx=12, pady=7,
-                             highlightthickness=1, highlightbackground=T.line)
-        self.pill.pack(side="right", pady=17)
+        controls = tk.Frame(self.header, bg=T.card)
+        controls.pack(side="right", padx=18, pady=17)
+        self.pill = tk.Label(controls, text="●  Bereit", bg=T.accent_soft, fg=T.accent,
+                             font=(self.ui, 9, "bold"), padx=12, pady=8,
+                             highlightthickness=0)
+        self.pill.pack(side="right", padx=(10, 0))
         self.settings_button = ttk.Button(
-            self.header, text="⚙  Einstellungen", style="Ghost.TButton",
+            controls, text="⚙  Einstellungen", style="Ghost.TButton",
             command=self.open_settings,
         )
-        self.settings_button.pack(side="right", padx=10, pady=17)
+        self.settings_button.pack(side="right")
+        self.activity_button = ttk.Button(
+            controls, text="☰  Aktivität", style="Ghost.TButton",
+            command=self.toggle_activity_log,
+        )
+        self.activity_button.pack(side="right", padx=(0, 8))
 
         self.activity = tk.Frame(right, bg=T.bg)
         self.activity.pack(fill="x", padx=26, pady=(0, 5))
@@ -4260,13 +4297,15 @@ class App(tk.Tk):
         self.tools_view.pack_forget()
 
         logwrap = tk.Frame(right, bg=T.bg)
-        logwrap.pack(fill="x", padx=26, pady=(0, 14))
+        logwrap.pack(fill="x", padx=24, pady=(0, 16))
         logwrap.pack_propagate(False)
-        logwrap.configure(height=148)
-        tk.Label(logwrap, text="AKTIVITÄT", bg=T.bg, fg=T.faint,
-                 font=(self.ui, 8, "bold"), anchor="w").pack(fill="x", pady=(0, 5))
+        logwrap.configure(height=176)
+        self.logwrap = logwrap
+        tk.Label(logwrap, text="AKTIVITÄT  /  SYSTEMPROTOKOLL", bg=T.bg, fg=T.faint,
+                 font=(self.ui, 8, "bold"), anchor="w").pack(fill="x", pady=(0, 7))
         self.log_panel = LogPanel(logwrap, self)
         self.log_panel.pack(fill="both", expand=True)
+        self.logwrap.pack_forget()
 
         self.show_view("overview")
         self.bind("<F5>", lambda _event: self.refresh_current_view())
@@ -4278,6 +4317,7 @@ class App(tk.Tk):
     def _install_tooltips(self) -> None:
         tips = (
             (self.settings_button, "Farbschema, Schriftgröße und Startbereich anpassen."),
+            (self.activity_button, "Das Systemprotokoll ein- oder ausblenden."),
             (self.drivers_view.btn_scan, "Installierte Geräte im Microsoft Update Catalog prüfen."),
             (self.drivers_view.btn_install, "Ausgewählte, passende Treiberupdates installieren."),
             (self.files_view.btn_scan, "Dateien im gewählten Ordner suchen. Es wird nichts automatisch gelöscht."),
@@ -4319,10 +4359,70 @@ class App(tk.Tk):
         active = getattr(self, "_active_nav", None)
         if row is active:
             return
-        bg = T.card_hover if entering else T.card
-        row.configure(bg=bg)
-        lbl.configure(fg=T.accent if entering else T.dim, bg=bg)
-        self.nav_icons[row].configure(fg=T.accent if entering else T.dim, bg=bg)
+        job = self._nav_animation_jobs.pop(row, None)
+        if job:
+            self.after_cancel(job)
+        widgets = (row, lbl, self.nav_icons[row])
+        start = [widget.cget("bg") for widget in widgets]
+        end = [T.card_hover if entering else T.card] * len(widgets)
+        start_fg = [lbl.cget("fg"), self.nav_icons[row].cget("fg")]
+        end_fg = [T.accent if entering else T.dim] * 2
+
+        def color_at(first: str, last: str, amount: float) -> str:
+            left = tuple(int(first[index:index + 2], 16) for index in (1, 3, 5))
+            right = tuple(int(last[index:index + 2], 16) for index in (1, 3, 5))
+            return "#%02x%02x%02x" % tuple(
+                round(a + (b - a) * amount) for a, b in zip(left, right)
+            )
+
+        def step(frame: int) -> None:
+            amount = frame / 5.0
+            try:
+                for widget, first, last in zip(widgets, start, end):
+                    widget.configure(bg=color_at(first, last, amount))
+                lbl.configure(fg=color_at(start_fg[0], end_fg[0], amount))
+                self.nav_icons[row].configure(
+                    fg=color_at(start_fg[1], end_fg[1], amount)
+                )
+            except tk.TclError:
+                self._nav_animation_jobs.pop(row, None)
+                return
+            if frame < 5:
+                self._nav_animation_jobs[row] = self.after(
+                    14, lambda: step(frame + 1)
+                )
+            else:
+                self._nav_animation_jobs.pop(row, None)
+
+        step(1)
+
+    def _schedule_nav_hover(self, row: tk.Frame, lbl: tk.Label) -> None:
+        previous = self._nav_hover_jobs.pop(row, None)
+        if previous:
+            self.after_cancel(previous)
+
+        def update() -> None:
+            self._nav_hover_jobs.pop(row, None)
+            if row is self._active_nav:
+                return
+            pointer = self.winfo_containing(self.winfo_pointerx(), self.winfo_pointery())
+            inside = False
+            while pointer is not None:
+                if pointer is row:
+                    inside = True
+                    break
+                pointer = getattr(pointer, "master", None)
+            self._nav_hover(row, lbl, inside)
+
+        self._nav_hover_jobs[row] = self.after_idle(update)
+
+    def toggle_activity_log(self) -> None:
+        if self.logwrap.winfo_manager():
+            self.logwrap.pack_forget()
+            self.activity_button.configure(text="☰  Aktivität")
+        else:
+            self.logwrap.pack(fill="x", padx=24, pady=(0, 16))
+            self.activity_button.configure(text="×  Aktivität")
 
     def _nav_focus(self, row: tk.Frame, lbl: tk.Label, focused: bool) -> None:
         if focused:
@@ -4381,6 +4481,12 @@ class App(tk.Tk):
         title, subtitle = nav_names.get(which, nav_names["overview"])
         self.h_title.config(text=title)
         self.h_sub.config(text=self._view_description(which, subtitle))
+        section = (
+            "NANO  /  WORKSPACE" if which == "overview" else
+            "NANO  /  DEVICE MANAGEMENT" if which in ("drivers", "files") else
+            "NANO  /  SYSTEM TOOLS"
+        )
+        self.h_eyebrow.config(text=section)
         self.current_view = which
         self._schedule_alert_refresh()
 
