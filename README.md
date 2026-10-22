@@ -1,6 +1,9 @@
 # Nano System Control
 
 Windows-Desktop-App zur Anzeige und Verwaltung von Treibern und Systemwartung.
+Das violette Farbschema ist die Voreinstellung; zehn Themes stehen in den
+Einstellungen zur Auswahl. Bedienelemente und Navigation reagieren mit
+passendem Hover- und Fokus-Feedback.
 
 ## Download
 

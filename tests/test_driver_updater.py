@@ -19,6 +19,11 @@ import usage_tracker
 
 
 class ThemeTests(unittest.TestCase):
+    def test_violet_is_the_default_startup_theme(self):
+        self.assertEqual(updater.DEFAULT_THEME, "violet")
+        for key, value in updater.THEME_PALETTES["violet"].items():
+            self.assertEqual(getattr(updater.T, key), value)
+
     def test_ten_themes_have_complete_distinct_palettes(self):
         expected_keys = set(updater.DARK_PALETTE)
         self.assertEqual(len(updater.THEME_PALETTES), 10)

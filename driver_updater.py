@@ -55,8 +55,9 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 from tkinter import font as tkfont
 
-APP_NAME = "System Updater & Cleaner"
+APP_NAME = "Nano System Control"
 APP_VERSION = "2.0"
+DEFAULT_THEME = "violet"
 APP_DIR = Path(os.environ.get("APPDATA") or str(Path.home())) / "SystemUpdaterCleaner"
 CONFIG_FILE = APP_DIR / "config.json"
 HISTORY_FILE = APP_DIR / "maintenance-history.json"
@@ -196,26 +197,26 @@ def _run_background_usage_tracker() -> int:
 # Farbpalette
 # ---------------------------------------------------------------------------
 class T:
-    bg = "#0e1422"
-    card = "#151e2e"
-    card_hi = "#1d2a3d"
-    line = "#304056"
+    bg = "#151020"
+    card = "#211831"
+    card_hi = "#302243"
+    line = "#49335f"
     text = "#f2f5fa"
     dim = "#bbc6d5"
     faint = "#91a0b4"
-    accent = "#67d8c2"
-    accent_hover = "#86e8d4"
-    card_hover = "#253650"
-    accent_soft = "#163b38"
-    accent_2 = "#b5a7ff"
-    ok = "#61d6a4"
+    accent = "#c19aff"
+    accent_hover = "#d4b8ff"
+    card_hover = "#3b2b53"
+    accent_soft = "#38264f"
+    accent_2 = "#ff9ed2"
+    ok = "#87dfbd"
     warn = "#f0c46e"
     err = "#f18491"
     danger = "#713a4a"
     danger_text = "#ffe9ec"
     danger_border = "#985264"
-    sel = "#244653"
-    stripe = "#192436"
+    sel = "#48335f"
+    stripe = "#281d38"
 
 
 DARK_PALETTE = {
@@ -3605,7 +3606,7 @@ class FilesView(ttk.Frame):
 class App(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
-        self.title("%s  %s" % (APP_NAME, APP_VERSION))
+        self.title("Nano System Control  %s" % APP_VERSION)
         self.geometry("1280x820")
         self.minsize(1040, 680)
         self.configure(bg=T.bg)
@@ -3614,7 +3615,7 @@ class App(tk.Tk):
         self.title_font = pick_font(self, "Segoe UI Variable Display", "Segoe UI Semibold", "Segoe UI")
         self.mono = pick_font(self, "Cascadia Mono", "Consolas", "Courier New")
         self.emoji = pick_font(self, "Segoe UI Emoji", "Segoe UI Symbol", self.ui)
-        self.theme_name = "dark"
+        self.theme_name = DEFAULT_THEME
         self.font_scale = 1.0
         self.start_view = "overview"
         self.beginner_mode = False
@@ -3643,6 +3644,7 @@ class App(tk.Tk):
         self.last_file_scan = "Noch nie"
 
         self._build_ui()
+        self._install_hover_feedback(self)
         LOG.bind(lambda lvl, m: self._post_ui(self.log_panel.write, lvl, m))
         self._init_usage_tracker()
         self._load_config()
@@ -3815,24 +3817,41 @@ class App(tk.Tk):
         s.configure("Field.TEntry", fieldbackground=T.card_hi, foreground=T.text,
                     insertcolor=T.accent, borderwidth=1, relief="flat",
                     bordercolor=T.line, padding=(10, 8))
+        s.map("Field.TEntry", bordercolor=[("focus", T.accent)],
+              fieldbackground=[("focus", T.card)])
+        s.configure("TCombobox", fieldbackground=T.card_hi, background=T.card_hi,
+                    foreground=T.text, arrowcolor=T.accent, bordercolor=T.line,
+                    lightcolor=T.line, darkcolor=T.line, padding=(8, 6))
+        s.map("TCombobox", fieldbackground=[("readonly", T.card_hi), ("focus", T.card)],
+              selectbackground=[("readonly", T.card_hi)],
+              selectforeground=[("readonly", T.text)],
+              arrowcolor=[("pressed", T.accent_hover), ("active", T.accent_hover)],
+              bordercolor=[("focus", T.accent), ("active", T.accent_hover)])
         s.configure("Accent.TButton", background=T.accent, foreground=T.bg, borderwidth=0,
-                    focuscolor=T.accent, padding=(14, 9),
+                    focuscolor=T.accent_hover, padding=(14, 9), relief="flat",
                     font=(self.ui, max(9, round(10 * self.font_scale)), "bold"))
-        s.map("Accent.TButton", background=[("active", T.accent_hover), ("disabled", T.card_hi)],
-              foreground=[("disabled", T.faint)])
+        s.map("Accent.TButton",
+              background=[("disabled", T.card_hi), ("pressed", T.accent_soft),
+                          ("active", T.accent_hover)],
+              foreground=[("disabled", T.faint), ("pressed", T.text)],
+              relief=[("pressed", "sunken"), ("active", "flat")])
         s.configure("Ghost.TButton", background=T.card_hi, foreground=T.text, borderwidth=1,
                     bordercolor=T.line, relief="solid", padding=(13, 8),
                     font=(self.ui, max(9, round(10 * self.font_scale)), "bold"))
-        s.map("Ghost.TButton", background=[("active", T.card_hover)],
+        s.map("Ghost.TButton", background=[("pressed", T.accent_soft),
+                                           ("active", T.card_hover)],
               foreground=[("disabled", T.faint)],
-              bordercolor=[("!disabled", T.line)])
+              bordercolor=[("pressed", T.accent), ("active", T.accent_hover),
+                           ("!disabled", T.line)])
         s.configure("Danger.TButton", background=T.danger, foreground=T.danger_text,
                     borderwidth=1, bordercolor=T.danger_border, relief="solid",
                     padding=(13, 9),
                     font=(self.ui, max(9, round(10 * self.font_scale)), "bold"))
-        s.map("Danger.TButton", background=[("active", T.err), ("disabled", T.card_hi)],
+        s.map("Danger.TButton", background=[("disabled", T.card_hi),
+                                            ("pressed", T.danger_border), ("active", T.err)],
               foreground=[("disabled", T.faint)],
-              bordercolor=[("!disabled", T.danger_border)])
+              bordercolor=[("pressed", T.err), ("active", T.err),
+                           ("!disabled", T.danger_border)])
         s.configure("Accent.Horizontal.TProgressbar", troughcolor=T.card_hi, background=T.accent,
                     borderwidth=0, thickness=8)
         s.configure("Treeview", background=T.card, fieldbackground=T.card, foreground=T.text,
@@ -3842,8 +3861,9 @@ class App(tk.Tk):
         s.configure("Treeview.Heading", background=T.card_hi, foreground=T.dim,
                     borderwidth=0, relief="flat", padding=(10, 9),
                     font=(self.ui, max(8, round(9 * self.font_scale)), "bold"))
-        s.map("Treeview.Heading", background=[("active", "#2b3b53")],
-              foreground=[("active", T.text)])
+        s.map("Treeview.Heading",
+              background=[("pressed", T.accent_soft), ("active", T.card_hover)],
+              foreground=[("active", T.accent)])
         s.configure("TScrollbar", background=T.card_hi, troughcolor=T.card, borderwidth=0,
                     arrowcolor=T.dim, arrowsize=12)
         s.configure("TProgressbar", background=T.accent, troughcolor=T.card_hi, borderwidth=0)
@@ -3927,6 +3947,14 @@ class App(tk.Tk):
         for child in widget.winfo_children():
             yield from App._walk_widgets(child)
 
+    def _install_hover_feedback(self, parent: tk.Misc) -> None:
+        for widget in self._walk_widgets(parent):
+            if isinstance(widget, (ttk.Button, tk.Button)):
+                try:
+                    widget.configure(cursor="hand2")
+                except tk.TclError:
+                    pass
+
     def open_settings(self) -> None:
         dialog = tk.Toplevel(self)
         dialog.title("Einstellungen")
@@ -3939,7 +3967,8 @@ class App(tk.Tk):
         ttk.Label(outer, text="Einstellungen", style="H1.TLabel").pack(anchor="w")
 
         theme_labels = {label: key for key, label in THEME_LABELS.items()}
-        theme_var = tk.StringVar(value=THEME_LABELS.get(self.theme_name, THEME_LABELS["dark"]))
+        theme_var = tk.StringVar(
+            value=THEME_LABELS.get(self.theme_name, THEME_LABELS[DEFAULT_THEME]))
         ttk.Label(outer, text="Farbschema", style="Muted.TLabel").pack(
             anchor="w", pady=(16, 4))
         theme_row = ttk.Frame(outer, style="Bg.TFrame")
@@ -4045,6 +4074,7 @@ class App(tk.Tk):
         dialog.bind("<Escape>", lambda _event: dialog.destroy())
         dialog.bind("<Return>", lambda _event: save())
         dialog.update_idletasks()
+        self._install_hover_feedback(dialog)
         x = self.winfo_rootx() + (self.winfo_width() - dialog.winfo_width()) // 2
         y = self.winfo_rooty() + (self.winfo_height() - dialog.winfo_height()) // 2
         dialog.geometry("+%d+%d" % (x, y))
@@ -4100,6 +4130,7 @@ class App(tk.Tk):
                 lbl.pack(side="left", fill="both", expand=True, padx=(2, 4))
                 self.nav_icons[row] = icon
                 for widget in (row, icon, lbl):
+                    widget.configure(cursor="hand2")
                     widget.bind("<Enter>", lambda _e, r=row, l=lbl:
                                 self._nav_hover(r, l, True))
                     widget.bind("<Leave>", lambda _e, r=row, l=lbl:
@@ -4232,9 +4263,9 @@ class App(tk.Tk):
         active = getattr(self, "_active_nav", None)
         if row is active:
             return
-        bg = T.card_hi if entering else T.card
+        bg = T.card_hover if entering else T.card
         row.configure(bg=bg)
-        lbl.configure(fg=T.text if entering else T.dim, bg=bg)
+        lbl.configure(fg=T.accent if entering else T.dim, bg=bg)
         self.nav_icons[row].configure(fg=T.accent if entering else T.dim, bg=bg)
 
     def _nav_focus(self, row: tk.Frame, lbl: tk.Label, focused: bool) -> None:
@@ -4242,9 +4273,9 @@ class App(tk.Tk):
             if row is self._active_nav:
                 lbl.configure(highlightbackground=T.accent, fg=T.accent)
                 return
-            row.configure(bg=T.card_hi)
-            lbl.configure(bg=T.card_hi, fg=T.text, highlightbackground=T.accent)
-            self.nav_icons[row].configure(bg=T.card_hi, fg=T.accent)
+            row.configure(bg=T.card_hover)
+            lbl.configure(bg=T.card_hover, fg=T.accent, highlightbackground=T.accent)
+            self.nav_icons[row].configure(bg=T.card_hover, fg=T.accent)
         else:
             if row is self._active_nav:
                 lbl.configure(highlightbackground=T.accent, bg=T.accent_soft, fg=T.accent)
@@ -4775,6 +4806,8 @@ class App(tk.Tk):
                            view if view in valid_views else "overview")
         theme = data.get("theme")
         if theme in THEME_PALETTES:
+            if theme == "dark" and data.get("theme_configured") is not True:
+                theme = DEFAULT_THEME
             self.apply_theme(theme)
         scale = data.get("font_scale")
         if isinstance(scale, (float, int)) and 0.85 <= scale <= 1.25:
@@ -4796,6 +4829,7 @@ class App(tk.Tk):
                     "view": getattr(self, "current_view", "overview"),
                     "start_view": self.start_view,
                     "theme": self.theme_name,
+                    "theme_configured": True,
                     "font_scale": self.font_scale,
                     "beginner_mode": self.beginner_mode,
                     "alerts_enabled": self.alerts_enabled,
