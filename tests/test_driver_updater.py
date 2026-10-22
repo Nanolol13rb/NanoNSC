@@ -18,6 +18,18 @@ import maintenance
 import usage_tracker
 
 
+class ThemeTests(unittest.TestCase):
+    def test_ten_themes_have_complete_distinct_palettes(self):
+        expected_keys = set(updater.DARK_PALETTE)
+        self.assertEqual(len(updater.THEME_PALETTES), 10)
+        self.assertEqual(set(updater.THEME_LABELS), set(updater.THEME_PALETTES))
+        for palette in updater.THEME_PALETTES.values():
+            self.assertEqual(set(palette), expected_keys)
+        self.assertEqual(
+            len({palette["accent"] for palette in updater.THEME_PALETTES.values()}), 10
+        )
+
+
 class UsageTrackerTests(unittest.TestCase):
     def test_records_foreground_time_and_persists_locally(self):
         with tempfile.TemporaryDirectory() as directory:

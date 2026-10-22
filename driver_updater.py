@@ -82,6 +82,8 @@ class T:
     dim = "#bbc6d5"
     faint = "#91a0b4"
     accent = "#67d8c2"
+    accent_hover = "#86e8d4"
+    card_hover = "#253650"
     accent_soft = "#163b38"
     accent_2 = "#b5a7ff"
     ok = "#61d6a4"
@@ -100,7 +102,8 @@ DARK_PALETTE = {
     "accent_soft": "#163b38", "accent_2": "#b5a7ff", "ok": "#61d6a4",
     "warn": "#f0c46e", "err": "#f18491", "danger": "#713a4a",
     "danger_text": "#ffe9ec", "danger_border": "#985264",
-    "sel": "#244653", "stripe": "#192436",
+    "sel": "#244653", "stripe": "#192436", "accent_hover": "#86e8d4",
+    "card_hover": "#253650",
 }
 LIGHT_PALETTE = {
     "bg": "#f3f6fa", "card": "#ffffff", "card_hi": "#e8eef5", "line": "#cbd5e1",
@@ -108,7 +111,72 @@ LIGHT_PALETTE = {
     "accent_soft": "#d8f1ec", "accent_2": "#6554b8", "ok": "#08774d",
     "warn": "#8b5b00", "err": "#b3263e", "danger": "#fde7ea",
     "danger_text": "#8e1930", "danger_border": "#d99aa5",
-    "sel": "#d2e8f0", "stripe": "#f0f4f8",
+    "sel": "#d2e8f0", "stripe": "#f0f4f8", "accent_hover": "#b5e5dc",
+    "card_hover": "#d8e1eb",
+}
+THEME_PALETTES = {
+    "dark": DARK_PALETTE,
+    "light": LIGHT_PALETTE,
+    "violet": {
+        **DARK_PALETTE, "bg": "#151020", "card": "#211831", "card_hi": "#302243",
+        "line": "#49335f", "accent": "#c19aff", "accent_soft": "#38264f",
+        "accent_2": "#ff9ed2", "ok": "#87dfbd", "sel": "#48335f",
+        "stripe": "#281d38", "accent_hover": "#d4b8ff", "card_hover": "#3b2b53",
+    },
+    "rose": {
+        **DARK_PALETTE, "bg": "#1b1018", "card": "#281721", "card_hi": "#3a222f",
+        "line": "#563342", "accent": "#ff8cab", "accent_soft": "#482332",
+        "accent_2": "#ffc078", "ok": "#8fe0b4", "sel": "#563044",
+        "stripe": "#301c28", "accent_hover": "#ffa9bf", "card_hover": "#482b3a",
+    },
+    "sunset": {
+        **DARK_PALETTE, "bg": "#20130f", "card": "#2d1b15", "card_hi": "#42271c",
+        "line": "#62402a", "accent": "#ff9b54", "accent_soft": "#4d2d1d",
+        "accent_2": "#ffd166", "ok": "#9edb91", "sel": "#59361f",
+        "stripe": "#352018", "accent_hover": "#ffb276", "card_hover": "#523221",
+    },
+    "amber": {
+        **DARK_PALETTE, "bg": "#1c190e", "card": "#292414", "card_hi": "#39321b",
+        "line": "#574a29", "accent": "#e9c46a", "accent_soft": "#463a1b",
+        "accent_2": "#f4a261", "ok": "#a6d189", "sel": "#514323",
+        "stripe": "#302a17", "accent_hover": "#f3d58b", "card_hover": "#494027",
+    },
+    "forest": {
+        **DARK_PALETTE, "bg": "#101a15", "card": "#17251c", "card_hi": "#223529",
+        "line": "#344d3b", "accent": "#8ecf78", "accent_soft": "#243d27",
+        "accent_2": "#d1b37c", "ok": "#9ad68a", "sel": "#304b34",
+        "stripe": "#1c2c21", "accent_hover": "#a8df95", "card_hover": "#2b4131",
+    },
+    "ocean": {
+        **DARK_PALETTE, "bg": "#0c1720", "card": "#13232e", "card_hi": "#1d3442",
+        "line": "#2e4b5c", "accent": "#55c7e8", "accent_soft": "#153949",
+        "accent_2": "#8eb8ff", "ok": "#78d8bb", "sel": "#1f4354",
+        "stripe": "#172a36", "accent_hover": "#80d7ee", "card_hover": "#294352",
+    },
+    "crimson": {
+        **DARK_PALETTE, "bg": "#1c1012", "card": "#291719", "card_hi": "#3a2023",
+        "line": "#5a3034", "accent": "#ff6b6b", "accent_soft": "#4a2025",
+        "accent_2": "#ffad66", "ok": "#91d39b", "sel": "#54272d",
+        "stripe": "#301a1d", "accent_hover": "#ff9292", "card_hover": "#48292c",
+    },
+    "mono": {
+        **DARK_PALETTE, "bg": "#141414", "card": "#202020", "card_hi": "#2d2d2d",
+        "line": "#454545", "accent": "#e1e1e1", "accent_soft": "#353535",
+        "accent_2": "#b8b8b8", "ok": "#b2d8b2", "sel": "#414141",
+        "stripe": "#262626", "accent_hover": "#ffffff", "card_hover": "#393939",
+    },
+}
+THEME_LABELS = {
+    "dark": "🌙 Dunkel",
+    "light": "☀️ Hell",
+    "violet": "💜 Violett",
+    "rose": "🌸 Rosa",
+    "sunset": "🌅 Sonnenuntergang",
+    "amber": "🟡 Bernstein",
+    "forest": "🌲 Wald",
+    "ocean": "🌊 Ozean",
+    "crimson": "🔴 Rubinrot",
+    "mono": "⚫ Monochrom",
 }
 
 
@@ -3543,14 +3611,12 @@ class App(tk.Tk):
         s.configure("Accent.TButton", background=T.accent, foreground=T.bg, borderwidth=0,
                     focuscolor=T.accent, padding=(14, 9),
                     font=(self.ui, max(9, round(10 * self.font_scale)), "bold"))
-        accent_hover = "#86e8d4" if self.theme_name == "dark" else "#b5e5dc"
-        card_hover = "#253650" if self.theme_name == "dark" else "#d8e1eb"
-        s.map("Accent.TButton", background=[("active", accent_hover), ("disabled", T.card_hi)],
+        s.map("Accent.TButton", background=[("active", T.accent_hover), ("disabled", T.card_hi)],
               foreground=[("disabled", T.faint)])
         s.configure("Ghost.TButton", background=T.card_hi, foreground=T.text, borderwidth=1,
                     bordercolor=T.line, relief="solid", padding=(13, 8),
                     font=(self.ui, max(9, round(10 * self.font_scale)), "bold"))
-        s.map("Ghost.TButton", background=[("active", card_hover)],
+        s.map("Ghost.TButton", background=[("active", T.card_hover)],
               foreground=[("disabled", T.faint)],
               bordercolor=[("!disabled", T.line)])
         s.configure("Danger.TButton", background=T.danger, foreground=T.danger_text,
@@ -3576,7 +3642,9 @@ class App(tk.Tk):
         s.configure("TProgressbar", background=T.accent, troughcolor=T.card_hi, borderwidth=0)
 
     def apply_theme(self, name: str) -> None:
-        palette = LIGHT_PALETTE if name == "light" else DARK_PALETTE
+        palette = THEME_PALETTES.get(name)
+        if palette is None:
+            raise ValueError("Unbekanntes Farbschema: %s" % name)
         old = {key: getattr(T, key) for key in palette}
         for key, value in palette.items():
             setattr(T, key, value)
@@ -3663,14 +3731,37 @@ class App(tk.Tk):
         outer.pack(fill="both", expand=True)
         ttk.Label(outer, text="Einstellungen", style="H1.TLabel").pack(anchor="w")
 
-        theme_var = tk.StringVar(value=self.theme_name)
+        theme_labels = {label: key for key, label in THEME_LABELS.items()}
+        theme_var = tk.StringVar(value=THEME_LABELS.get(self.theme_name, THEME_LABELS["dark"]))
         ttk.Label(outer, text="Farbschema", style="Muted.TLabel").pack(
             anchor="w", pady=(16, 4))
         theme_row = ttk.Frame(outer, style="Bg.TFrame")
         theme_row.pack(fill="x")
-        for value, label in (("dark", "🌙 Dunkel"), ("light", "☀️ Hell")):
-            ttk.Radiobutton(theme_row, text=label, value=value, variable=theme_var).pack(
-                side="left", padx=(0, 14))
+        theme_picker = ttk.Combobox(
+            theme_row, textvariable=theme_var, state="readonly",
+            values=tuple(THEME_LABELS.values()), width=24,
+        )
+        theme_picker.pack(side="left")
+        preview = tk.Frame(theme_row, bg=T.card, padx=3, pady=3)
+        preview.pack(side="left", padx=(10, 0))
+        preview_swatches = [
+            tk.Frame(preview, width=22, height=18, bg=color)
+            for color in (T.bg, T.accent, T.accent_2)
+        ]
+        for swatch in preview_swatches:
+            swatch.pack(side="left", padx=2)
+            swatch.pack_propagate(False)
+
+        def update_theme_preview(_event=None) -> None:
+            theme_key = theme_labels.get(theme_var.get())
+            if theme_key:
+                palette = THEME_PALETTES[theme_key]
+                for swatch, color in zip(
+                        preview_swatches,
+                        (palette["bg"], palette["accent"], palette["accent_2"])):
+                    swatch.configure(bg=color)
+
+        theme_picker.bind("<<ComboboxSelected>>", update_theme_preview)
 
         scale_var = tk.StringVar(value=str(self.font_scale))
         ttk.Label(outer, text="Schriftgröße", style="Muted.TLabel").pack(
@@ -3731,7 +3822,7 @@ class App(tk.Tk):
                                   ValueError("Schriftgröße oder Startbereich ist ungültig."),
                                   "Wähle gültige Werte aus den Listen.", dialog)
                 return
-            self.apply_theme(theme_var.get())
+            self.apply_theme(theme_labels[theme_var.get()])
             self.apply_font_scale(scale)
             self.beginner_mode = bool(beginner_var.get())
             alerts_were_enabled = self.alerts_enabled
@@ -4453,7 +4544,7 @@ class App(tk.Tk):
         self.start_view = (configured_view if configured_view in valid_views else
                            view if view in valid_views else "overview")
         theme = data.get("theme")
-        if theme in ("dark", "light"):
+        if theme in THEME_PALETTES:
             self.apply_theme(theme)
         scale = data.get("font_scale")
         if isinstance(scale, (float, int)) and 0.85 <= scale <= 1.25:
