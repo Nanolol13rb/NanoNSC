@@ -67,6 +67,7 @@ USER_AGENT = (
 )
 
 IS_WINDOWS = os.name == "nt"
+NO_CONSOLE_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0) if IS_WINDOWS else 0
 
 
 # ---------------------------------------------------------------------------
@@ -196,6 +197,7 @@ def run_ps(script: str, timeout: int = 90) -> Tuple[int, str, str]:
             ["powershell", "-NoLogo", "-NoProfile", "-NonInteractive",
              "-ExecutionPolicy", "Bypass", "-Command", wrapped],
             capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout,
+            creationflags=NO_CONSOLE_WINDOW,
         )
         return p.returncode, p.stdout or "", p.stderr or ""
     except subprocess.TimeoutExpired:
@@ -234,7 +236,7 @@ def run_elevated(ps_path: Path, timeout: int = 1800) -> int:
     info.lpParameters = (
         "-NoProfile -ExecutionPolicy Bypass -File \"%s\"" % str(ps_path)
     )
-    info.nShow = 1
+    info.nShow = 0
     shell32 = ctypes.WinDLL("shell32", use_last_error=True)
     shell32.ShellExecuteExW.argtypes = [ctypes.POINTER(_SHELLEXECUTEINFO)]
     shell32.ShellExecuteExW.restype = wintypes.BOOL
@@ -965,7 +967,7 @@ class UpdateEngine:
                 result = subprocess.run(
                     ["expand.exe", "-F:*", str(package), str(extract_dir)],
                     capture_output=True, text=True, encoding="utf-8", errors="replace",
-                    timeout=180,
+                    timeout=180, creationflags=NO_CONSOLE_WINDOW,
                 )
                 if result.returncode != 0:
                     detail = (result.stderr or result.stdout or "").strip()
@@ -1527,7 +1529,7 @@ def export_drivers_to_folder(destination: Path,
     process = subprocess.Popen(
         ["pnputil.exe", "/export-driver", "*", str(destination)],
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
-        encoding="utf-8", errors="replace",
+        encoding="utf-8", errors="replace", creationflags=NO_CONSOLE_WINDOW,
     )
     while process.poll() is None:
         if cancel_event and cancel_event.wait(0.2):
