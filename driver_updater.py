@@ -380,26 +380,43 @@ def send_to_recycle(paths: Sequence[str]) -> Tuple[int, List[str]]:
 # ---------------------------------------------------------------------------
 # HTTP
 # ---------------------------------------------------------------------------
-def http_get(url: str, data: Optional[bytes] = None, timeout: int = 60) -> bytes:
+def http_get(url: str, data: Optional[bytes] = None, timeout: int = 60,
+             cancel_event: Optional[threading.Event] = None) -> bytes:
     req = urllib.request.Request(url, data=data)
     req.add_header("User-Agent", USER_AGENT)
     req.add_header("Accept-Language", "en-US,en;q=0.9")
     if data is not None:
         req.add_header("Content-Type", "application/x-www-form-urlencoded")
     with urllib.request.urlopen(req, timeout=timeout) as resp:
-        raw = resp.read()
+        if cancel_event and cancel_event.is_set():
+            raise OperationCancelled("Treiberprüfung wurde abgebrochen.")
+        if cancel_event:
+            chunks = []
+            while True:
+                if cancel_event.is_set():
+                    raise OperationCancelled("Treiberprüfung wurde abgebrochen.")
+                chunk = resp.read(64 * 1024)
+                if not chunk:
+                    break
+                chunks.append(chunk)
+            raw = b"".join(chunks)
+        else:
+            raw = resp.read()
         if resp.headers.get("Content-Encoding", "").lower() == "gzip":
             import gzip
             raw = gzip.decompress(raw)
         return raw
 
 
-def http_download(url: str, dest: Path, timeout: int = 300) -> None:
+def http_download(url: str, dest: Path, timeout: int = 300,
+                  cancel_event: Optional[threading.Event] = None) -> None:
     """Streamt einen Download in eine temporaere Datei und ersetzt das Ziel atomar."""
     req = urllib.request.Request(url)
     req.add_header("User-Agent", USER_AGENT)
     req.add_header("Accept-Language", "en-US,en;q=0.9")
     with urllib.request.urlopen(req, timeout=timeout) as response:
+        if cancel_event and cancel_event.is_set():
+            raise OperationCancelled("Treiberprüfung wurde abgebrochen.")
         if urllib.parse.urlparse(response.geturl()).scheme.lower() != "https":
             raise ValueError("Der Download wurde auf eine unsichere HTTP-Adresse umgeleitet.")
         with tempfile.NamedTemporaryFile(
@@ -407,7 +424,16 @@ def http_download(url: str, dest: Path, timeout: int = 300) -> None:
                 delete=False) as tmp:
             temporary = Path(tmp.name)
             try:
-                shutil.copyfileobj(response, tmp, length=1024 * 1024)
+                if cancel_event:
+                    while True:
+                        if cancel_event.is_set():
+                            raise OperationCancelled("Treiberprüfung wurde abgebrochen.")
+                        chunk = response.read(1024 * 1024)
+                        if not chunk:
+                            break
+                        tmp.write(chunk)
+                else:
+                    shutil.copyfileobj(response, tmp, length=1024 * 1024)
                 tmp.flush()
                 os.fsync(tmp.fileno())
             except Exception:
@@ -449,9 +475,10 @@ _UPDATE_ID_RE = re.compile(
 class CatalogClient:
     BASE = "https://www.catalog.update.microsoft.com"
 
-    def search(self, query: str) -> List[CatalogEntry]:
+    def search(self, query: str,
+               cancel_event: Optional[threading.Event] = None) -> List[CatalogEntry]:
         url = "%s/Search.aspx?q=%s&sortOrder=datePublished" % (self.BASE, urllib.parse.quote(query))
-        page = http_get(url, timeout=60).decode("utf-8", "replace")
+        page = http_get(url, timeout=15, cancel_event=cancel_event).decode("utf-8", "replace")
         if "We did not find any results" in page:
             return []
         found: Dict[str, CatalogEntry] = {}
@@ -505,7 +532,8 @@ class CatalogClient:
             version = found[-1] if found else ""
         return CatalogEntry("", title, version, date, product, classification)
 
-    def resolve_files(self, update_id: str) -> List[Tuple[str, str]]:
+    def resolve_files(self, update_id: str,
+                      cancel_event: Optional[threading.Event] = None) -> List[Tuple[str, str]]:
         if not _UPDATE_ID_RE.fullmatch(update_id):
             raise ValueError("Ungueltige Update-ID.")
         ids = '[{"size":0,"languages":"","uidInfo":"%s","updateID":"%s"}]' % (update_id, update_id)
@@ -514,7 +542,10 @@ class CatalogClient:
             "downloadMethod": "2", "includeAllLanguages": "true", "errorCount": "0",
             "cp39": "true", "servicePackID": "1", "uniqueProductId": "null",
         }).encode()
-        page = http_get("%s/DownloadDialog.aspx" % self.BASE, data=body, timeout=90).decode("utf-8", "replace")
+        page = http_get(
+            "%s/DownloadDialog.aspx" % self.BASE, data=body, timeout=20,
+            cancel_event=cancel_event,
+        ).decode("utf-8", "replace")
         names: Dict[int, str] = {}
         urls: Dict[int, str] = {}
         for m in _FILE_RE.finditer(page):
@@ -523,10 +554,13 @@ class CatalogClient:
             urls[int(m.group(1))] = html.unescape(m.group(2))
         return [(names[i], urls[i]) for i in sorted(urls) if i in names]
 
-    def download(self, update_id: str, dest: Path) -> List[Path]:
+    def download(self, update_id: str, dest: Path,
+                 cancel_event: Optional[threading.Event] = None) -> List[Path]:
         dest.mkdir(parents=True, exist_ok=True)
         out: List[Path] = []
-        for name, url in self.resolve_files(update_id):
+        for name, url in self.resolve_files(update_id, cancel_event=cancel_event):
+            if cancel_event and cancel_event.is_set():
+                raise OperationCancelled("Treiberprüfung wurde abgebrochen.")
             filename = ntpath.basename(name.replace("/", "\\"))
             if not filename or filename in (".", "..") or "\0" in filename:
                 raise ValueError("Ungueltiger Paketdateiname im Katalog.")
@@ -535,7 +569,7 @@ class CatalogClient:
             if parsed.scheme.lower() != "https" or not parsed.hostname:
                 raise ValueError("Der Katalog lieferte eine unsichere Download-Adresse.")
             if not target.is_file() or target.stat().st_size == 0:
-                http_download(url, target, timeout=300)
+                http_download(url, target, timeout=30, cancel_event=cancel_event)
             out.append(target)
         return out
 
@@ -947,18 +981,28 @@ class UpdateEngine:
         cls = (entry.classification or "").lower()
         return 1 if hint in cls else 0
 
-    def candidates(self, dev: InstalledDriver) -> List[CatalogEntry]:
+    def candidates(self, dev: InstalledDriver,
+                   cancel_event: Optional[threading.Event] = None) -> List[CatalogEntry]:
         seen: Dict[str, CatalogEntry] = {}
         errors: List[Exception] = []
         queries = self.query_variants(dev)
         if not queries:
             raise RuntimeError("Fuer dieses Geraet konnte kein Suchbegriff erstellt werden.")
         for query in queries:
+            if cancel_event and cancel_event.is_set():
+                raise OperationCancelled("Treiberprüfung wurde abgebrochen.")
             try:
-                entries = self.catalog.search(query)
+                if cancel_event:
+                    entries = self.catalog.search(query, cancel_event=cancel_event)
+                else:
+                    entries = self.catalog.search(query)
+            except OperationCancelled:
+                raise
             except Exception as exc:
                 errors.append(exc)
                 continue
+            if cancel_event and cancel_event.is_set():
+                raise OperationCancelled("Treiberprüfung wurde abgebrochen.")
             for e in entries:
                 seen.setdefault(e.update_id, e)
             if len(self._rank(dev, seen.values())) >= 3:
@@ -1012,24 +1056,35 @@ class UpdateEngine:
         return unique
 
     # -- Paket vorbereiten -------------------------------------------------
-    def prepare(self, dev: InstalledDriver, entry: CatalogEntry) -> Optional[PreparedUpdate]:
+    def prepare(self, dev: InstalledDriver, entry: CatalogEntry,
+                cancel_event: Optional[threading.Event] = None) -> Optional[PreparedUpdate]:
         with self._package_lock(entry.update_id):
             try:
-                return self._prepare_locked(dev, entry)
+                return self._prepare_locked(dev, entry, cancel_event)
+            except OperationCancelled:
+                raise
             except Exception as exc:
                 LOG.warn("Paket konnte nicht geprueft werden (%s): %s" % (dev.name[:40], exc))
                 raise
 
     def _prepare_locked(self, dev: InstalledDriver,
-                        entry: CatalogEntry) -> Optional[PreparedUpdate]:
+                        entry: CatalogEntry,
+                        cancel_event: Optional[threading.Event] = None
+                        ) -> Optional[PreparedUpdate]:
+        if cancel_event and cancel_event.is_set():
+            raise OperationCancelled("Treiberprüfung wurde abgebrochen.")
         package_dir = self.workdir / entry.update_id
-        files = self.catalog.download(entry.update_id, package_dir)
+        files = self.catalog.download(
+            entry.update_id, package_dir, cancel_event=cancel_event
+        )
         if not files:
             raise RuntimeError("Der Update-Katalog hat keine Paketdateien geliefert.")
         package_dir.mkdir(parents=True, exist_ok=True)
         extract_dir = Path(tempfile.mkdtemp(prefix="extract-", dir=str(package_dir)))
         extracted = False
         for package in files:
+            if cancel_event and cancel_event.is_set():
+                raise OperationCancelled("Treiberprüfung wurde abgebrochen.")
             suffix = package.suffix.lower()
             if suffix == ".cab":
                 result = subprocess.run(
@@ -4207,6 +4262,8 @@ class App(tk.Tk):
 
     def report_progress(self, current: int, total: Optional[int], text: str) -> None:
         def update() -> None:
+            if not self.busy or self.cancel_event.is_set():
+                return
             if total and total > 0:
                 elapsed = max(0.0, time.monotonic() - self.operation_started_at)
                 remaining = elapsed * max(0, total - current) / max(current, 1)
@@ -4266,6 +4323,10 @@ class App(tk.Tk):
 
     def _drivers_loaded(self, vendor: List[InstalledDriver], total: int) -> None:
         self._hide_startup_screen()
+        if self.cancel_event.is_set():
+            self.set_busy(False, "Treiberlesen abgebrochen")
+            LOG.warn("Treiberlesen abgebrochen.")
+            return
         self.drivers = vendor
         self.drivers_loaded = True
         self.record_scan("drivers", "%d Herstellertreiber von %d Geräten" %
@@ -4317,22 +4378,29 @@ class App(tk.Tk):
                 return
             LOG.info("Katalog-Suche fuer %d Treiber (Feature-Release %s) ..." %
                      (len(self.drivers), engine.release))
-            self._post_ui(self.drivers_view.progress.configure, maximum=len(groups), value=0)
+            self._post_ui(self._update_driver_scan_progress, 0, len(groups))
 
             def check(group: List[InstalledDriver]) -> None:
                 if self.cancel_event.is_set():
-                    return
+                    raise OperationCancelled("Treiberprüfung wurde abgebrochen.")
                 dev = group[0]
                 prep = None
                 failure = ""
                 try:
-                    cands = engine.candidates(dev)
+                    self.report_progress(
+                        0, None, "Suche im Update-Katalog: %s" % dev.name[:48]
+                    )
+                    cands = engine.candidates(dev, cancel_event=self.cancel_event)
                     for cand in cands[:6]:
                         if self.cancel_event.is_set():
-                            break
+                            raise OperationCancelled("Treiberprüfung wurde abgebrochen.")
                         LOG.info("  %s -> Kandidat %s" % (dev.name[:42], cand.version))
                         try:
-                            prep = engine.prepare(dev, cand)
+                            prep = engine.prepare(
+                                dev, cand, cancel_event=self.cancel_event
+                            )
+                        except OperationCancelled:
+                            raise
                         except Exception as exc:
                             failure = str(exc)
                             continue
@@ -4341,6 +4409,8 @@ class App(tk.Tk):
                                    % (dev.name[:46], dev.version, prep.new_version))
                             break
                         LOG.warn("    Paket passt nicht zur Hardware-ID, uebersprungen")
+                except OperationCancelled:
+                    raise
                 except Exception as exc:
                     failure = str(exc)
                 with lock:
@@ -4352,13 +4422,16 @@ class App(tk.Tk):
                             errors[d.device_id] = failure
                     done[0] += 1
                     n = done[0]
-                self._post_ui(self.drivers_view.progress.configure, value=n)
+                self._post_ui(self._update_driver_scan_progress, n, len(groups))
                 self.report_progress(n, len(groups),
                                      "Treiberprüfung %d von %d" % (n, len(groups)))
 
             try:
                 with ThreadPoolExecutor(max_workers=4) as pool:
                     list(pool.map(check, list(groups.values())))
+            except OperationCancelled:
+                self._post_ui(self._driver_scan_cancelled)
+                return
             except Exception as exc:
                 self._post_ui(self._driver_scan_failed, exc)
                 return
@@ -4369,6 +4442,11 @@ class App(tk.Tk):
 
         self._scan_thread = threading.Thread(target=work, daemon=True)
         self._scan_thread.start()
+
+    def _update_driver_scan_progress(self, current: int, total: int) -> None:
+        if not self.busy or self.cancel_event.is_set():
+            return
+        self.drivers_view.progress.configure(maximum=max(total, 1), value=current)
 
     def _updates_found(self, found: Dict[str, PreparedUpdate],
                        errors: Optional[Dict[str, str]] = None) -> None:

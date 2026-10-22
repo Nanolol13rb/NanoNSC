@@ -438,6 +438,45 @@ class CatalogTests(unittest.TestCase):
 
 
 class UpdateSearchTests(unittest.TestCase):
+    def test_candidate_search_stops_when_cancelled_before_start(self):
+        device = updater.InstalledDriver(
+            "Intel Wi-Fi AX200", "device", "oem.inf", "1.0", "", "Intel",
+            "Net", [r"PCI\VEN_8086&DEV_2723"],
+        )
+
+        class UnusedCatalog:
+            def search(self, query, cancel_event=None):
+                raise AssertionError("A cancelled search must not contact the catalog.")
+
+        with mock.patch.object(updater, "os_build", return_value=26100):
+            engine = updater.UpdateEngine(UnusedCatalog(), Path(tempfile.gettempdir()))
+        cancel = updater.threading.Event()
+        cancel.set()
+        with self.assertRaises(updater.OperationCancelled):
+            engine.candidates(device, cancel_event=cancel)
+
+    def test_candidate_search_stops_between_query_variants_after_cancel(self):
+        device = updater.InstalledDriver(
+            "Intel Wi-Fi AX200", "device", "oem.inf", "1.0", "", "Intel",
+            "Net", [r"PCI\VEN_8086&DEV_2723"],
+        )
+        cancel = updater.threading.Event()
+
+        class CancellingCatalog:
+            calls = 0
+
+            def search(self, query, cancel_event=None):
+                self.calls += 1
+                cancel.set()
+                return []
+
+        catalog = CancellingCatalog()
+        with mock.patch.object(updater, "os_build", return_value=26100):
+            engine = updater.UpdateEngine(catalog, Path(tempfile.gettempdir()))
+        with self.assertRaises(updater.OperationCancelled):
+            engine.candidates(device, cancel_event=cancel)
+        self.assertEqual(catalog.calls, 1)
+
     def test_all_catalog_failures_are_not_reported_as_current(self):
         device = updater.InstalledDriver(
             "Intel Wi-Fi AX200", "device", "oem.inf", "1.0", "", "Intel",
