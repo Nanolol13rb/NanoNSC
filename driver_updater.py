@@ -56,7 +56,7 @@ from tkinter import filedialog, messagebox, ttk
 from tkinter import font as tkfont
 
 APP_NAME = "Nano System Control"
-APP_VERSION = "2.4.0"
+APP_VERSION = "2.4.1"
 DEFAULT_THEME = "violet"
 APP_DIR = Path(os.environ.get("APPDATA") or str(Path.home())) / "SystemUpdaterCleaner"
 CONFIG_FILE = APP_DIR / "config.json"
@@ -4518,6 +4518,7 @@ class App(tk.Tk):
         self.set_busy(False)
         if vendor:
             LOG.ok("%d Herstellertreiber von %d Geraeten geladen." % (len(vendor), total))
+            self.after(0, self.scan_updates)
         else:
             LOG.warn("Keine Herstellertreiber gefunden (Geraete insgesamt: %d)." % total)
             self.set_status("Keine Herstellertreiber", T.warn)
