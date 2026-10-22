@@ -30,6 +30,40 @@ class ThemeTests(unittest.TestCase):
         )
 
 
+class BackgroundUsageTests(unittest.TestCase):
+    def test_usage_commands_are_atomically_written_and_consumed(self):
+        class FakeTracker:
+            def __init__(self):
+                self.commands = []
+                self.enabled = False
+
+            def start(self):
+                self.commands.append("start")
+                self.enabled = True
+
+            def pause(self):
+                self.commands.append("pause")
+                self.enabled = False
+
+            def reset(self):
+                self.commands.append("reset")
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            command_file = root / "control.json"
+            tracker = FakeTracker()
+            with mock.patch.object(updater, "APP_DIR", root), \
+                    mock.patch.object(updater, "USAGE_CONTROL_FILE", command_file):
+                for command in ("start", "pause", "reset"):
+                    updater._write_usage_command(command)
+                    self.assertTrue(updater._apply_usage_command(tracker))
+                    self.assertFalse(command_file.exists())
+                with self.assertRaises(ValueError):
+                    updater._write_usage_command("invalid")
+
+        self.assertEqual(tracker.commands, ["start", "pause", "reset"])
+
+
 class UsageTrackerTests(unittest.TestCase):
     def test_records_foreground_time_and_persists_locally(self):
         with tempfile.TemporaryDirectory() as directory:

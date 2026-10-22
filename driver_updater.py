@@ -61,6 +61,9 @@ APP_DIR = Path(os.environ.get("APPDATA") or str(Path.home())) / "SystemUpdaterCl
 CONFIG_FILE = APP_DIR / "config.json"
 HISTORY_FILE = APP_DIR / "maintenance-history.json"
 USAGE_FILE = APP_DIR / "app-usage.json"
+USAGE_CONTROL_FILE = APP_DIR / "app-usage-control.json"
+USAGE_AUTOSTART_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
+USAGE_AUTOSTART_NAME = "Nano System Control App-Nutzung"
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36"
@@ -68,6 +71,125 @@ USER_AGENT = (
 
 IS_WINDOWS = os.name == "nt"
 NO_CONSOLE_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0) if IS_WINDOWS else 0
+DETACHED_PROCESS = getattr(subprocess, "DETACHED_PROCESS", 0x00000008)
+
+
+def _write_usage_command(command: str) -> None:
+    if command not in ("start", "pause", "reset"):
+        raise ValueError("Ungültiger Befehl für die Nutzungsaufzeichnung.")
+    APP_DIR.mkdir(parents=True, exist_ok=True)
+    temporary: Optional[Path] = None
+    try:
+        with tempfile.NamedTemporaryFile(
+                mode="w", encoding="utf-8", dir=str(APP_DIR),
+                prefix="app-usage-command-", suffix=".tmp", delete=False) as stream:
+            temporary = Path(stream.name)
+            json.dump({"command": command}, stream)
+            stream.flush()
+            os.fsync(stream.fileno())
+        temporary.replace(USAGE_CONTROL_FILE)
+    finally:
+        if temporary and temporary.exists():
+            temporary.unlink()
+
+
+def _set_usage_autostart(enabled: bool) -> None:
+    if winreg is None:
+        raise RuntimeError("Hintergrundstart ist nur unter Windows verfügbar.")
+    with winreg.CreateKeyEx(
+            winreg.HKEY_CURRENT_USER, USAGE_AUTOSTART_KEY, 0,
+            winreg.KEY_SET_VALUE) as key:
+        if enabled:
+            if getattr(sys, "frozen", False):
+                command = '"%s" --background-tracker' % sys.executable
+            else:
+                pythonw = Path(sys.executable).with_name("pythonw.exe")
+                executable = str(pythonw if pythonw.is_file() else Path(sys.executable))
+                command = '"%s" "%s" --background-tracker' % (
+                    executable, Path(__file__).resolve())
+            winreg.SetValueEx(key, USAGE_AUTOSTART_NAME, 0, winreg.REG_SZ, command)
+        else:
+            try:
+                winreg.DeleteValue(key, USAGE_AUTOSTART_NAME)
+            except FileNotFoundError:
+                pass
+
+
+def _launch_background_usage_tracker() -> None:
+    if not IS_WINDOWS:
+        raise RuntimeError("Hintergrundaufzeichnung wird nur unter Windows unterstützt.")
+    if getattr(sys, "frozen", False):
+        command = [sys.executable, "--background-tracker"]
+    else:
+        pythonw = Path(sys.executable).with_name("pythonw.exe")
+        executable = str(pythonw if pythonw.is_file() else Path(sys.executable))
+        command = [executable, str(Path(__file__).resolve()), "--background-tracker"]
+    subprocess.Popen(
+        command, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL, close_fds=True,
+        creationflags=DETACHED_PROCESS | NO_CONSOLE_WINDOW,
+        cwd=str(Path(__file__).resolve().parent),
+    )
+
+
+def _apply_usage_command(tracker: usage_tracker.UsageTracker) -> bool:
+    if not USAGE_CONTROL_FILE.exists():
+        return False
+    try:
+        payload = json.loads(USAGE_CONTROL_FILE.read_text(encoding="utf-8"))
+    finally:
+        USAGE_CONTROL_FILE.unlink(missing_ok=True)
+    if not isinstance(payload, dict):
+        raise ValueError("Befehl für die Nutzungsaufzeichnung ist ungültig.")
+    command = payload.get("command")
+    if command == "start":
+        tracker.start()
+    elif command == "pause":
+        tracker.pause()
+    elif command == "reset":
+        tracker.reset()
+    else:
+        raise ValueError("Unbekannter Hintergrund-Aufzeichnungsbefehl.")
+    return True
+
+
+def _run_background_usage_tracker() -> int:
+    if not IS_WINDOWS:
+        return 1
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.CreateMutexW.argtypes = [wintypes.LPVOID, wintypes.BOOL, wintypes.LPCWSTR]
+    kernel32.CreateMutexW.restype = wintypes.HANDLE
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel32.CloseHandle.restype = wintypes.BOOL
+    ctypes.set_last_error(0)
+    mutex = kernel32.CreateMutexW(None, False, "Local\\NanoSystemControlUsageTracker")
+    if not mutex:
+        raise ctypes.WinError(ctypes.get_last_error())
+    if ctypes.get_last_error() == 183:
+        kernel32.CloseHandle(mutex)
+        return 0
+
+    tracker: Optional[usage_tracker.UsageTracker] = None
+    idle_since: Optional[float] = None
+    try:
+        tracker = usage_tracker.UsageTracker(USAGE_FILE)
+        if tracker.enabled:
+            tracker.start()
+        while True:
+            if _apply_usage_command(tracker) and tracker.enabled:
+                idle_since = None
+            if tracker.enabled:
+                idle_since = None
+            else:
+                if idle_since is None:
+                    idle_since = time.monotonic()
+                elif time.monotonic() - idle_since >= 10:
+                    return 0
+            time.sleep(1)
+    finally:
+        if tracker is not None and tracker.enabled:
+            tracker.shutdown()
+        kernel32.CloseHandle(mutex)
 
 
 # ---------------------------------------------------------------------------
@@ -2500,7 +2622,8 @@ class ToolsView(ttk.Frame):
             frame,
             text="Datenschutz: Es werden nur Prozessnamen und aktive Vordergrundzeit "
                  "gespeichert – keine Fenstertitel, Inhalte oder Tastatureingaben. "
-                 "Gezählt wird nur, solange diese App läuft; Zeit zwischen Messpunkten "
+                 "Bei aktiver Erfassung läuft ein Hintergrundprozess auch nach dem "
+                 "Schließen dieses Fensters; Zeit zwischen Messpunkten "
                  "ist auf maximal 7,5 Sekunden begrenzt.",
             style="Muted.TLabel", wraplength=820, justify="left",
         ).pack(anchor="w", padx=24, pady=(0, 10))
@@ -2520,7 +2643,13 @@ class ToolsView(ttk.Frame):
         self._usage_refresh_id: Optional[str] = None
 
     def refresh_app_usage(self) -> None:
-        tracker = getattr(self.app, "usage_tracker", None)
+        try:
+            tracker = usage_tracker.UsageTracker(USAGE_FILE)
+            self.app.usage_tracker = tracker
+            self.app.usage_error = ""
+        except (OSError, ValueError) as exc:
+            self.app.usage_error = str(exc)
+            tracker = None
         self.usage_tree.delete(*self.usage_tree.get_children())
         if tracker is None:
             self.usage_status.config(
@@ -2534,7 +2663,7 @@ class ToolsView(ttk.Frame):
             status = "Erfassung läuft seit %s · Messfehler: %s" % (
                 started, snapshot["last_error"])
         elif snapshot["enabled"]:
-            status = "Erfassung läuft seit %s · wird nur aufgezeichnet, solange diese App geöffnet ist" % started
+            status = "Erfassung läuft seit %s · zeichnet auch nach dem Schließen im Hintergrund auf" % started
         else:
             status = "Erfassung pausiert · Start: %s" % started
         self.usage_status.config(text=status)
@@ -2568,17 +2697,25 @@ class ToolsView(ttk.Frame):
             return
         try:
             if tracker.enabled:
-                tracker.pause()
+                _write_usage_command("pause")
+                _launch_background_usage_tracker()
+                _set_usage_autostart(False)
                 self.app.record_history("App-Nutzung", "Pausiert")
             else:
-                tracker.start()
+                _write_usage_command("start")
+                _set_usage_autostart(True)
+                _launch_background_usage_tracker()
                 self.app.record_history("App-Nutzung", "Erfassung gestartet")
-        except OSError as exc:
+        except (OSError, RuntimeError, subprocess.SubprocessError) as exc:
             show_action_error(APP_NAME, "App-Nutzungserfassung ändern", exc,
-                              "Prüfe den Schreibzugriff auf den lokalen App-Datenordner.",
+                              "Prüfe den Schreibzugriff auf den lokalen App-Datenordner "
+                              "und die Windows-Autostart-Einstellungen.",
                               self.app)
             return
-        self.refresh_app_usage()
+        self.usage_status.config(
+            text="Hintergrundaufzeichnung wird gestartet …" if not tracker.enabled else
+            "Aufzeichnung wird pausiert …")
+        self.app.after(1500, self.refresh_app_usage)
 
     def reset_app_usage(self) -> None:
         if not messagebox.askyesno(
@@ -2602,14 +2739,17 @@ class ToolsView(ttk.Frame):
                                   self.app)
                 return
         try:
-            tracker.reset()
+            if tracker.enabled:
+                _write_usage_command("reset")
+            else:
+                tracker.reset()
         except OSError as exc:
             show_action_error(APP_NAME, "Nutzungsdaten zurücksetzen", exc,
                               "Prüfe die Schreibrechte im lokalen App-Datenordner.",
                               self.app)
             return
         self.app.record_history("App-Nutzung", "Zurückgesetzt")
-        self.refresh_app_usage()
+        self.app.after(1000, self.refresh_app_usage)
 
     def refresh_history(self) -> None:
         try:
@@ -3634,11 +3774,23 @@ class App(tk.Tk):
     def _init_usage_tracker(self) -> None:
         try:
             self.usage_tracker = usage_tracker.UsageTracker(USAGE_FILE)
-            if self.usage_tracker.enabled:
-                self.usage_tracker.start()
         except (OSError, ValueError) as exc:
             self.usage_error = str(exc)
             LOG.err("App-Nutzungsdaten konnten nicht geladen werden: %s" % exc)
+            return
+        if self.usage_tracker.enabled:
+            try:
+                _set_usage_autostart(True)
+                _launch_background_usage_tracker()
+            except (OSError, RuntimeError, subprocess.SubprocessError) as exc:
+                self.usage_error = str(exc)
+                LOG.err("Hintergrundaufzeichnung konnte nicht gestartet werden: %s" % exc)
+        else:
+            try:
+                _set_usage_autostart(False)
+            except (OSError, RuntimeError) as exc:
+                self.usage_error = str(exc)
+                LOG.err("Hintergrund-Autostart konnte nicht deaktiviert werden: %s" % exc)
 
     # -- Styling ------------------------------------------------------------
     def _init_style(self) -> None:
@@ -4664,16 +4816,13 @@ class App(tk.Tk):
 
     def on_close(self) -> None:
         LOG.bind(None)
-        if self.usage_tracker is not None:
-            try:
-                self.usage_tracker.shutdown()
-            except OSError as exc:
-                LOG.err("App-Nutzungsdaten konnten nicht gesichert werden: %s" % exc)
         self._save_config()
         self.destroy()
 
 
 def main() -> None:
+    if "--background-tracker" in sys.argv[1:]:
+        raise SystemExit(_run_background_usage_tracker())
     if IS_WINDOWS:
         try:
             ctypes.windll.shcore.SetProcessDpiAwareness(1)

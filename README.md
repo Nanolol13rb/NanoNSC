@@ -25,6 +25,14 @@ python -m PyInstaller --noconfirm --clean --onefile --windowed --name NanoSystem
 
 Die EXE wird in `dist\NanoSystemControl.exe` erstellt.
 
+## App-Nutzung im Hintergrund
+
+Aktiviere unter **App-Nutzung** die Erfassung. Sie läuft dann in einem separaten,
+unsichtbaren Prozess weiter, wenn das Hauptfenster geschlossen wird, und startet
+bei aktiver Erfassung nach der Windows-Anmeldung automatisch. Über **Erfassung
+pausieren** wird die Aufzeichnung und ihr Autostart wieder deaktiviert.
+Gespeichert werden lokal nur Prozessnamen und Vordergrundzeiten.
+
 ## GitHub Release erstellen
 
 Push eines Tags mit `v`-Präfix, zum Beispiel `v1.0.0`, startet den Windows-Build,
